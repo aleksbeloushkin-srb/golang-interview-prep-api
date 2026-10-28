@@ -26,7 +26,7 @@ def run(task_id, code):
         "rawPath": "/runs",
         "body": json.dumps({"taskId": task_id, "code": code}),
         "isBase64Encoded": False,
-        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "smoke"}}}, "http": {"method": "POST", "path": "/runs"}},
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "smoke", "token_use": "access"}}}, "http": {"method": "POST", "path": "/runs"}},
     }
     req = urllib.request.Request(url, data=json.dumps(event).encode(), headers={"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=120) as resp:

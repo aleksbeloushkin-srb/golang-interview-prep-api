@@ -36,7 +36,7 @@ func (h *Handler) Handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		claims = req.RequestContext.Authorizer.JWT.Claims
 	}
 	userID := claims["sub"]
-	if userID == "" {
+	if userID == "" || claims["token_use"] != "access" { // only access tokens, not ID tokens
 		return reply(http.StatusUnauthorized, errorBody("no user in the token"))
 	}
 

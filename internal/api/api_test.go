@@ -17,7 +17,7 @@ func request(route, sub, body string) events.APIGatewayV2HTTPRequest {
 	if sub != "" {
 		req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
 			JWT: &events.APIGatewayV2HTTPRequestContextAuthorizerJWTDescription{
-				Claims: map[string]string{"sub": sub, "username": "google_123"},
+				Claims: map[string]string{"sub": sub, "username": "google_123", "token_use": "access"},
 			},
 		}
 	}
