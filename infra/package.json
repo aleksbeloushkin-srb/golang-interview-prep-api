@@ -1,0 +1,19 @@
+{
+  "name": "golang-interview-prep-infra",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit",
+    "synth": "cdk synth",
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "aws-cdk": "2.1146.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.275.0",
+    "constructs": "10.8.1"
+  }
+}
