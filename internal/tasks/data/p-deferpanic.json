@@ -1,0 +1,6 @@
+{
+  "id": "p-deferpanic",
+  "package": "deferpanic",
+  "testFile": "deferpanic_test.go",
+  "tests": "package deferpanic\n\nimport (\n\t\"slices\"\n\t\"strings\"\n\t\"testing\"\n)\n\nfunc TestDeferOrder(t *testing.T) {\n\tif got := DeferOrder(); !slices.Equal(got, []int{3, 2, 1}) {\n\t\tt.Fatalf(\"DeferOrder() = %v, want [3 2 1]\", got)\n\t}\n}\n\nfunc TestSafeDiv(t *testing.T) {\n\tq, err := SafeDiv(7, 2)\n\tif err != nil || q != 3 {\n\t\tt.Fatalf(\"SafeDiv(7, 2) = %d, %v; want 3, nil\", q, err)\n\t}\n}\n\nfunc TestSafeDivByZero(t *testing.T) {\n\tq, err := SafeDiv(1, 0) // must not panic: the test would crash\n\tif err == nil {\n\t\tt.Fatal(\"got nil error for division by zero\")\n\t}\n\tif q != 0 {\n\t\tt.Fatalf(\"q = %d, want 0 with an error\", q)\n\t}\n\tif !strings.Contains(err.Error(), \"divide by zero\") {\n\t\tt.Fatalf(\"error %q should mention the runtime panic\", err)\n\t}\n}\n"
+}

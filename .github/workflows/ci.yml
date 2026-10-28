@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+      - name: gofmt
+        run: test -z "$(gofmt -l cmd internal runner)"
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      # Every site task: the reference solution must pass, the starter must fail.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aleksbeloushkin-srb/golang-interview-prep
+          path: site
+      - name: tasks are in sync with the site
+        run: |
+          go run ./cmd/synctasks -site site
+          git diff --exit-code -- internal/tasks/data
+      - name: site solutions through the runner
+        run: |
+          (cd runner/warm && go mod tidy)
+          SITE_DIR="$PWD/site" RUNNER_GOSUM="$PWD/runner/warm/go.sum" go test -count=1 -run TestSiteSolutions -v ./internal/runner
+
+  runner-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aleksbeloushkin-srb/golang-interview-prep
+          path: site
+      - run: docker build -f runner.Dockerfile -t runner .
+      # Like Lambda: read-only root and a writable /tmp.
+      - name: run tasks in the image
+        run: |
+          docker run -d --rm --name runner -p 9000:8080 --read-only --tmpfs /tmp:rw,exec,size=2g runner
+          sleep 3
+          python3 runner/smoke.py site
+      - if: always()
+        run: docker logs runner || true
+
+  infra:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: synth
+        run: |
+          mkdir -p ../dist/api && touch ../dist/api/bootstrap
+          npx cdk synth -q

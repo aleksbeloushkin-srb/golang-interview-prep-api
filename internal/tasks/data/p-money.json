@@ -1,0 +1,6 @@
+{
+  "id": "p-money",
+  "package": "money",
+  "testFile": "money_test.go",
+  "tests": "package money\n\nimport \"testing\"\n\nfunc TestString(t *testing.T) {\n\ttests := []struct {\n\t\tname string\n\t\tin   Money\n\t\twant string\n\t}{\n\t\t{\"whole and cents\", Money{1250, \"EUR\"}, \"12.50 EUR\"},\n\t\t{\"only cents\", Money{5, \"EUR\"}, \"0.05 EUR\"},\n\t\t{\"zero\", Money{0, \"USD\"}, \"0.00 USD\"},\n\t\t{\"negative\", Money{-1250, \"EUR\"}, \"-12.50 EUR\"},\n\t\t{\"negative below one\", Money{-5, \"EUR\"}, \"-0.05 EUR\"},\n\t\t{\"no minor units\", Money{1250, \"JPY\"}, \"1250 JPY\"},\n\t\t{\"three decimals\", Money{1250, \"BHD\"}, \"1.250 BHD\"},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tif got := tt.in.String(); got != tt.want {\n\t\t\t\tt.Errorf(\"String() = %q, want %q\", got, tt.want)\n\t\t\t}\n\t\t})\n\t}\n}\n\n// Money implements fmt.Stringer, so %v and Println use String.\nfunc TestStringer(t *testing.T) {\n\tvar _ interface{ String() string } = Money{}\n}\n"
+}
