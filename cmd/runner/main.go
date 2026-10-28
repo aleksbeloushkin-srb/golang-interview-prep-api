@@ -86,6 +86,13 @@ func newRunner() (*runner.Runner, error) {
 }
 
 func handle(ctx context.Context, r *runner.Runner, log *slog.Logger, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// API Gateway's JWT authorizer already rejects requests without a valid
+	// Cognito token. This second check means the runner never runs code for a
+	// request without a user, even if the route were misconfigured.
+	sub := userID(req)
+	if sub == "" {
+		return reply(http.StatusUnauthorized, map[string]string{"error": "sign in first"})
+	}
 	body := []byte(req.Body)
 	if req.IsBase64Encoded {
 		var err error
@@ -105,12 +112,17 @@ func handle(ctx context.Context, r *runner.Runner, log *slog.Logger, req events.
 		log.ErrorContext(ctx, "run", "task", in.TaskID, "err", err)
 		return reply(http.StatusInternalServerError, map[string]string{"error": "internal error"})
 	}
-	var sub string
-	if a := req.RequestContext.Authorizer; a != nil && a.JWT != nil {
-		sub = a.JWT.Claims["sub"]
-	}
 	log.InfoContext(ctx, "run", "task", in.TaskID, "user", sub, "passed", res.Passed, "ms", res.Millis, "timedOut", res.TimedOut)
 	return reply(http.StatusOK, res)
+}
+
+// userID is the Cognito user from the validated access token, or "".
+func userID(req events.APIGatewayV2HTTPRequest) string {
+	a := req.RequestContext.Authorizer
+	if a == nil || a.JWT == nil || a.JWT.Claims["token_use"] != "access" {
+		return ""
+	}
+	return a.JWT.Claims["sub"]
 }
 
 func reply(status int, v any) (events.APIGatewayV2HTTPResponse, error) {
