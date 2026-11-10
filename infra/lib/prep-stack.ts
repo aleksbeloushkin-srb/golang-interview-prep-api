@@ -1,6 +1,8 @@
 import * as path from 'path';
 import { CfnOutput, Duration, RemovalPolicy, SecretValue, Size, Stack, StackProps } from 'aws-cdk-lib';
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
@@ -9,6 +11,8 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Construct } from 'constructs';
 
 /** Where the site lives; the login returns there. */
@@ -19,10 +23,16 @@ export const LOCAL_ORIGIN = 'http://localhost:8000';
 export const AUTH_DOMAIN_PREFIX = 'golang-interview-prep';
 /** Secrets Manager secret with {"clientId": …, "clientSecret": …} from Google. */
 export const GOOGLE_SECRET = 'prep/google-oauth';
+/** At most this many runs at once: caps the cost of a leaked token or a client loop (3 GB for up to 29 s each). */
+export const RUNNER_CONCURRENCY = 2;
+/** More runs than this in an hour is unusual for one person and raises the alarm. */
+export const RUNS_PER_HOUR_ALARM = 60;
 
 export interface PrepStackProps extends StackProps {
   /** Directory with the API Lambda's bootstrap binary (built by CI). */
   readonly apiCodeDir?: string;
+  /** Where alarms are emailed; comes from the deploy environment, never from the repository. */
+  readonly alertEmail?: string;
 }
 
 export class PrepStack extends Stack {
@@ -112,6 +122,7 @@ export class PrepStack extends Stack {
       memorySize: 3008,
       ephemeralStorageSize: Size.gibibytes(2),
       timeout: Duration.seconds(29), // the HTTP API waits at most 30 s
+      reservedConcurrentExecutions: RUNNER_CONCURRENCY,
       environment: { RUN_TIMEOUT: '25s' },
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
@@ -131,6 +142,9 @@ export class PrepStack extends Stack {
     // A low limit caps the cost if a token ever leaks.
     const stage = httpApi.defaultStage!.node.defaultChild as apigw.CfnStage;
     stage.defaultRouteSettings = { throttlingRateLimit: 5, throttlingBurstLimit: 10 };
+    // A run takes seconds of a 3 GB Lambda, so /runs gets a tighter limit of its own.
+    // RouteSettings is untyped JSON in CloudFormation's own casing.
+    stage.routeSettings = { 'POST /runs': { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 2 } };
 
     const authorizer = new HttpJwtAuthorizer('Cognito', `https://cognito-idp.${this.region}.amazonaws.com/${users.userPoolId}`, {
       jwtAudience: [siteClient.userPoolClientId], // access tokens carry client_id, which the authorizer checks
@@ -139,6 +153,18 @@ export class PrepStack extends Stack {
     httpApi.addRoutes({ path: '/me', methods: [apigw.HttpMethod.GET], integration: apiIntegration, authorizer });
     httpApi.addRoutes({ path: '/progress', methods: [apigw.HttpMethod.GET, apigw.HttpMethod.PUT], integration: apiIntegration, authorizer });
     httpApi.addRoutes({ path: '/runs', methods: [apigw.HttpMethod.POST], integration: new HttpLambdaIntegration('RunnerIntegration', runner), authorizer });
+
+    // --- Alarm on unusual use of the runner. Emergency stop: set the runner's reserved concurrency to 0.
+    const alerts = new sns.Topic(this, 'Alerts');
+    if (props.alertEmail) alerts.addSubscription(new subs.EmailSubscription(props.alertEmail));
+    new cloudwatch.Alarm(this, 'RunnerBusy', {
+      metric: runner.metricInvocations({ period: Duration.hours(1), statistic: cloudwatch.Stats.SUM }),
+      threshold: RUNS_PER_HOUR_ALARM,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: `More than ${RUNS_PER_HOUR_ALARM} runs in an hour`,
+    }).addAlarmAction(new cwActions.SnsAction(alerts));
 
     // --- Values the site needs (public; they go into js/config.js).
     new CfnOutput(this, 'ApiUrl', { value: httpApi.apiEndpoint });
