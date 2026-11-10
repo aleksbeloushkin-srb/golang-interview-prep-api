@@ -50,5 +50,7 @@ secret live only in Secrets Manager (`prep/google-oauth`).
 
 - The runner Lambda sits in isolated subnets with a security group without rules: submitted code has no network.
 - `go test` gets a fixed environment (no AWS credentials), a time limit, and is killed with its whole process group.
-- The HTTP API is throttled to 5 requests per second (burst 10).
+- The HTTP API is throttled to 5 requests per second (burst 10); `POST /runs` to 1 per second (burst 2).
+- At most 2 runs execute at once (reserved concurrency), which caps the cost of a leaked token or a client loop.
+- A CloudWatch alarm fires on more than 60 runs in an hour. Its SNS topic emails the `ALERT_EMAIL` repository secret, if set; confirm the subscription from the first email. Emergency stop: set the runner's reserved concurrency to 0 in the Lambda console.
 - Only Google test users of the OAuth app can sign in while it is in "Testing" mode.
